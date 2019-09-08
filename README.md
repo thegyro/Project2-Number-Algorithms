@@ -1,4 +1,4 @@
-CUDA Stream Compaction
+CUDA Number Algorithms
 ======================
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
@@ -9,6 +9,8 @@ CUDA Stream Compaction
 
 ### (TODO: Your README)
 
-Include analysis, etc. (Remember, this is public, so don't put
-anything here that you don't want to share with the world.)
+Link to the readmes of the other two subprojects.
+
+Add anything else you think is relevant up to this point.
+(Remember, this is public, so don't put anything here that you don't want to share with the world.)
 
