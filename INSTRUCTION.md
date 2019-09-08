@@ -5,8 +5,8 @@ This is due Sunday, September 8.
 
 There are two subprojects to be completed here, do them in order:
 
-1) [./Project2-Stream-Compaction/INSTRUCTIONS_STREAM_COMPACTION.md] Stream Compaction
-2) [./Project2-Character-Recognition/INSTRUCTIONS_CHARACTER_RECOGNITION.md] Character Recognition
+1) [Stream Compaction](./Project2-Stream-Compaction/INSTRUCTIONS_STREAM_COMPACTION.md)
+2) [Character Recognition](./Project2-Character-Recognition/INSTRUCTIONS_CHARACTER_RECOGNITION.md)
 
 ## Submit
 
