@@ -3,10 +3,11 @@ CUDA Homework 2
 
 This is due Sunday, September 8.
 
-There are two subprojects to be completed here, do them in order:
+There are two subprojects to be completed here. Make sure do them in order:
 
 1) [Stream Compaction](./Project2-Stream-Compaction/INSTRUCTIONS_STREAM_COMPACTION.md)
-2) [Character Recognition](./Project2-Character-Recognition/INSTRUCTIONS_CHARACTER_RECOGNITION.md)
+2) [Character Recognition](./Project2-Character-Recognition/INSTRUCTIONS_CHARACTER_RECOGNITION.md) 
+	- Make sure to give plenty of time to complete this subproject
 
 ## Submit
 
