@@ -1,7 +1,7 @@
 CUDA Homework 2
 ============================
 
-This is due Sunday, September 8.
+This is due Tuesday, Sept 17.
 
 There are two subprojects to be completed here. Make sure do them in order:
 
