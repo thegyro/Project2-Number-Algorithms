@@ -69,7 +69,7 @@ The system should initially be set to running so that main continues calling you
 
 ### Part 2.1: Using just number inputs and a small network
 
-Instead of pulling directly from the image and starting on a larger data set, start with a smaller example to check your math. Remember from recitation the 2x2 XOR [excel file example](./2x2_XOR_excel_example); use that as an initial testing sample for your newly coded implementation to see if you get the same numbers for both the excel and your implementation for the first pass through your network.
+Instead of pulling directly from the image and starting on a larger data set, start with a smaller example to check your math. Remember from recitation the 2x2 XOR [excel file example](./2x2_XOR_excel_example.xlsx); use that as an initial testing sample for your newly coded implementation to see if you get the same numbers for both the excel and your implementation for the first pass through your network.
 
 ### Part 2.2: Expand so it works for your image inputs
 
