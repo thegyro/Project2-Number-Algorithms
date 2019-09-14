@@ -18,9 +18,31 @@ namespace StreamCompaction {
          * (Optional) For better understanding before starting moving to GPU, you can simulate your GPU scan in this function first.
          */
         void scan(int n, int *odata, const int *idata) {
-	        timer().startCpuTimer();
-            // TODO
-	        timer().endCpuTimer();
+			bool exception = false;
+			try {
+				timer().startCpuTimer();
+			}
+			catch (const std::runtime_error& ex) {
+				exception = true;
+			}
+
+            
+			if (n <= 0) return;
+			if (n == 1) {
+				odata[0] = 0;
+				return;
+			}
+			odata[0] = 0;
+			odata[1] = idata[0];
+
+
+			for (int i = 2; i < n; i++) {
+				odata[i] = odata[i - 1] + idata[i - 1];
+			}
+
+			if(!exception)
+				timer().endCpuTimer();
+	
         }
 
         /**
@@ -30,9 +52,17 @@ namespace StreamCompaction {
          */
         int compactWithoutScan(int n, int *odata, const int *idata) {
 	        timer().startCpuTimer();
-            // TODO
+            
+			int k = 0;
+			for (int i = 0; i < n; i++) {
+				if (idata[i] != 0) {
+					odata[k] = idata[i];
+					k++;
+				}
+			}
+
 	        timer().endCpuTimer();
-            return -1;
+            return k;
         }
 
         /**
@@ -42,9 +72,25 @@ namespace StreamCompaction {
          */
         int compactWithScan(int n, int *odata, const int *idata) {
 	        timer().startCpuTimer();
-	        // TODO
+
+			int *checkNonZero = new int[n];
+			for (int i = 0; i < n; i++) {
+				if (idata[i] != 0) checkNonZero[i] = 1;
+				else checkNonZero[i] = 0;
+			}
+
+			int *prefixSum = new int[n];
+			scan(n, prefixSum, checkNonZero);
+
+			for (int i = 0; i < n; i++) {
+				if (checkNonZero[i] != 0) {
+					odata[prefixSum[i]] = idata[i];
+				}
+			}
+
+			int count = checkNonZero[n - 1] == 0 ? prefixSum[n - 1] : prefixSum[n - 1] + 1;
 	        timer().endCpuTimer();
-            return -1;
+            return count;
         }
     }
 }
