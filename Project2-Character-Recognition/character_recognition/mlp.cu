@@ -14,6 +14,15 @@ namespace CharacterRecognition {
         static PerformanceTimer timer;
         return timer;
     }
+
+	void printArray2D(float *X, int nR, int nC) {
+		for (int i = 0; i < nR; i++) {
+			for (int j = 0; j < nC; j++)
+				printf("%.4f ", X[i*nC + j]);
+			printf("\n");
+		}
+		printf("\n");
+	}
         
     // TODO: __global__
 
@@ -59,15 +68,15 @@ namespace CharacterRecognition {
 		}
 	}
 
-	__global__ void kernMax(float *A, float *max, int N, int C) {
+	__global__ void kernMax(float *A, int *max, int N, int C) {
 		int tx = (blockDim.x * blockIdx.x) + threadIdx.x;
 
 		if (tx >= N) return;
 
 		int maxIndex = 0;
-		float maxVal = A[tx*N + 0];
+		float maxVal = A[tx*C + 0];
 		for (int i = 1; i < C; i++) {
-			float val = A[tx*N + i];
+			float val = A[tx*C + i];
 			if (val > maxVal) {
 				maxVal = val;
 				maxIndex = i;
@@ -446,22 +455,47 @@ namespace CharacterRecognition {
 	}
 
 	void predict(int N, int d, int C, int h1, float *X, int *y, float *W1, float *W2, int* predictions) {
+
+		float *fc = new float[N * h1 * sizeof(float)];
+		matrixMultiply(X, W1, fc, N, d, h1);
+
+		// Apply ReLU activation: X2 = ReLU(X2);
+		float *X2 = new float[N * h1 * sizeof(float)];
+		X2 = (float *)memcpy((void *)X2, (void *)fc, N * h1 * sizeof(float));
+		reLU(X2, N, h1);
+
+		// calculate log_scores for softmax
+		float *scores = new float[N * C * sizeof(float)];
+		matrixMultiply(X2, W2, scores, N, h1, C);
+		printArray2D(scores, N, C);
+
+		float *dev_scores;
+		cudaMalloc((void **)&dev_scores, N * C * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc dev_scores failed!");
 		int *dev_pred;
 		cudaMalloc((void **)&dev_pred, N * sizeof(int));
 		checkCUDAErrorWithLine("cudaMalloc dev_pred failed!");
 
+		cudaMemcpy(dev_scores, scores, N * C * sizeof(float), cudaMemcpyHostToDevice);
 
+		int numBlocks = (N + blockSize - 1) / blockSize;
+
+		kernMax << <numBlocks, blockSize >> > (dev_scores, dev_pred, N, C);
+
+		cudaMemcpy(predictions, dev_pred, N * sizeof(int), cudaMemcpyDeviceToHost);
+
+		delete[] fc;
+		delete[] X2;
+		delete[] scores;
+		cudaFree(dev_scores);
+		checkCUDAErrorWithLine("cudaFree dev_scores failed!");
+		cudaFree(dev_pred);
+		checkCUDAErrorWithLine("cudaFree dev_pred failed!");
+		
 	}
 
 
-	void printArray2D(float *X, int nR, int nC) {
-		for (int i = 0; i < nR; i++) {
-			for (int j = 0; j < nC; j++)
-				printf("%.4f ", X[i*nC + j]);
-			printf("\n");
-		}
-		printf("\n");
-	}
+
 
 	// TODO: implement required elements for MLP sections 1 and 2 here
 
@@ -496,6 +530,19 @@ namespace CharacterRecognition {
 		float *scores = new float[N * C * sizeof(float)];
 		matrixMultiply(X2, W2, scores, N, h1, C);
 		//printf("Log scores:\n");
+		//printArray2D(scores, N, C);
+
+		//for (int i = 0; i < N; i++) {
+		//	float max = scores[i*C + 0];
+		//	for (int j = 1; j < C; j++) {
+		//		if (scores[i*C + j] > max) max = scores[i*C + j];
+		//	}
+		//	
+		//	for (int j = 0; j < C; j++) {
+		//		scores[i*C + j] -= max;
+		//	}
+		//}
+
 		//printArray2D(scores, N, C);
 
 		// calculate softmax probability: apply exp on all elements and normalize by sum of columns
@@ -548,6 +595,20 @@ namespace CharacterRecognition {
 
 	void predictAndAcc(int N, int d, int C, int h1, float *X, int *y,  float *W1, float *W2) {
 
+		int* predictions = new int[N];
+		predict(N, d, C, h1, X, y, W1, W2, predictions);
+
+		for (int i = 0; i < N; i++) {
+			printf("Predictions for %d example is %d\n", i + 1, predictions[i]);
+		}
+
+		float accuracy = 0.0;
+		for (int i = 0; i < N; i++) {
+			accuracy += (predictions[i] == y[i]);
+		}
+		accuracy /= N;
+
+		printf("\n\nAccuracy is %.4f\n\n", accuracy);
 	}
 
 
