@@ -13,7 +13,6 @@ namespace StreamCompaction {
             static PerformanceTimer timer;
             return timer;
         }
-        // TODO: __global__
 
 		__global__ void prefixSum(int n, int d, int *odata, const int *idata) {
 			int index = (blockDim.x*blockIdx.x) + threadIdx.x;
@@ -37,18 +36,12 @@ namespace StreamCompaction {
 			odata[index] = idata[index-1];
 		}
 
-		void printxxx(int n, const int *a) {
-			for (int i = 0; i < n; i++) {
-				printf("%d ", a[i]);
-			}
-			printf("\n\n\n");
-		}
 
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
         void scan(int n, int *odata, const int *idata) {
-            timer().startGpuTimer();
+            
 
 			int numThreads = 128;
 			int numBlocks = (n + numThreads - 1) / numThreads;
@@ -68,9 +61,12 @@ namespace StreamCompaction {
 			cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(dev_odata1, idata, n * sizeof(int), cudaMemcpyHostToDevice);
 
+
 			int *out1 = dev_idata;
 			int *out2 = dev_odata1;
 
+
+			timer().startGpuTimer();
 
 			for (int d = 1; d <= d_max; d++) {
 				prefixSum<<<numBlocks, numThreads>>>(n, d, out2, out1);
@@ -79,6 +75,8 @@ namespace StreamCompaction {
 
 			shiftRight<<<numBlocks, numThreads>>>(n, out2, out1);
 
+			timer().endGpuTimer();
+
 			cudaMemcpy(odata, out2, n * sizeof(int), cudaMemcpyDeviceToHost);
 			
 
@@ -86,7 +84,7 @@ namespace StreamCompaction {
 			cudaFree(dev_odata1);
 			cudaFree(dev_odata2);
 
-            timer().endGpuTimer();
+            
         }
     }
 }
