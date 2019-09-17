@@ -1,16 +1,13 @@
 CUDA Number Algorithms
 ======================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture,
+Project 2 - Number Algorithms**
 
-* (TODO) YOUR NAME HERE
-  * (TODO) [LinkedIn](), [personal website](), [twitter](), etc.
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Srinath Rajagopalan
+  * [LinkedIn](https://www.linkedin.com/in/srinath-rajagopalan-07a43155), [twitter](https://twitter.com/srinath132)
+* Tested on: Windows 10, i7-6700 @ 3.4GHz 16GB, Nvidia Quadro P1000 4GB (Moore 100B Lab)
 
-### (TODO: Your README)
 
-Link to the readmes of the other two subprojects.
-
-Add anything else you think is relevant up to this point.
-(Remember, this is public, so don't put anything here that you don't want to share with the world.)
-
+1) [Project-Stream Compaction](Project2-Stream-Compaction/README.md)
+2) [Project-Character-Recognition](Project2-Character-Recognition/REAME.md)
