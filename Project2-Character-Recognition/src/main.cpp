@@ -93,17 +93,17 @@ void fillImage(float *X, int *y) {
 
 }
 
-void fillImageRandom(float *X, int *y) {
+void fillImageRandom(float *X, int *y, int N, int d) {
 
 	int j = 0;
-	for (int i = 1; i <= 52; i++) {
+	for (int i = 1; i <= N; i++) {
 		//std::cout << fileName << '\n';
 		
 			y[i - 1] = i - 1;
 
-			for(int k = 0; k < 1000000; k++) {
+			for(int k = 0; k < d; k++) {
 				//std::cout << j << '\n';
-				X[j++] = gen();
+				X[j++] = dis(gen);
 			}
 
 	}
@@ -157,16 +157,17 @@ int main(int argc, char* argv[]) {
 
 	//CharacterRecognition::predictAndAcc(N, d, C, h1, X, y, W1, W2);
 
-
-	float *X = new float[52 * 101 * 101];
-	int *y = new int[52];
-		
-	fillImage(X, y);
-
 	int N = 52;
-	int d = 101*101;
+	int d = 101 * 101;
 	int C = 52;
 	int h1 = 10;
+
+	float *X = new float[N * d];
+	int *y = new int[N];
+	//	
+	////fillImageRandom(X, y, N, d);
+	fillImage(X, y);
+	//fillInputXOR(X, y);
 
 	float *W1 = new float[d * h1 * sizeof(float)];
 	float *W2 = new float[h1 * C * sizeof(float)];

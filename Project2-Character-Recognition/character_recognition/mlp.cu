@@ -503,7 +503,7 @@ namespace CharacterRecognition {
 		cudaEventSynchronize(stop);
 		float milliseconds = 0;
 		cudaEventElapsedTime(&milliseconds, start, stop);
-		printf("Time taken for one train step: %.2f\n", milliseconds);
+		//printf("Time taken for one train step: %.2f\n", milliseconds);
 
 
 	}
@@ -525,6 +525,7 @@ namespace CharacterRecognition {
 		softmaxExp(scores, N, C);
 		softmaxNormalize(scores, N, C);
 
+		//printArray2D(scores, N, C);
 
 		int *dev_pred;
 		cudaMalloc((void **)&dev_pred, N * C * sizeof(int));
@@ -542,7 +543,7 @@ namespace CharacterRecognition {
 		predict(N, d, C, h1, X, y, W1, W2, predictions);
 
 		for (int i = 0; i < N; i++) {
-			printf("Predictions for %d example is %d\n", i + 1, predictions[i]+1);
+			printf("Predictions for %d example is %d\n", i + 1, predictions[i]);
 		}
 
 		int *host_y = new int[N];
