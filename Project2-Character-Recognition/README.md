@@ -72,7 +72,7 @@ The above code is treated as an API one can adhere to. It's easy to see how easi
 
 The training curve is plotted for the toy XOR operation and for the character recognition dataset.
 
-![](data/training_curve_XOR.png)
+![](data/training_curve_xor.png)
 
 ![](data/training_curve.png)
 
