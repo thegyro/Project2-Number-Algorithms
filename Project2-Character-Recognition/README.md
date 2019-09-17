@@ -87,7 +87,7 @@ With 52 examples, and enough number of hidden neurons, we can achieve 100% accur
 
 ![](data/white_noise.png)
 
-The performance analysis is based on generating random images of different resolutions (changing `d`) and different number of hidden neurons (changing `h`)
+The performance analysis is based on generating random images of different resolutions (changing `d`) and different number of hidden neurons (changing `h`). Resolution could be scaled to a maximum of 1 million pixels before running out of memory. Number of hidden neurons could be scaled to a maximum of 10K neurons before running out of memeory.
 
 ![](data/perf_image.png)
 
