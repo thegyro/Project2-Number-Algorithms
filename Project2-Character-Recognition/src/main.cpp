@@ -15,9 +15,14 @@
 #include <fstream>
 #include <sstream>
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+
 std::random_device rd;  //Will be used to obtain a seed for the random number engine
 std::mt19937 gen(rd());
 std::uniform_real_distribution<> dis(-0.01, 0.01);
+
+#define checkCUDAErrorWithLine(msg) checkCUDAError(msg)
 
 
 
@@ -68,7 +73,7 @@ void fillImage(float *X, int *y) {
 		if (myfile.is_open())
 		{
 			std::getline(myfile, line);
-			y[i - 1] = std::stoi(line) - 1 ;
+			y[i-1] = std::stoi(line) - 1 ;
 
 			std::getline(myfile, line);
 
@@ -87,6 +92,23 @@ void fillImage(float *X, int *y) {
 	}
 
 }
+
+void fillImageRandom(float *X, int *y) {
+
+	int j = 0;
+	for (int i = 1; i <= 52; i++) {
+		//std::cout << fileName << '\n';
+		
+			y[i - 1] = i - 1;
+
+			for(int k = 0; k < 1000000; k++) {
+				//std::cout << j << '\n';
+				X[j++] = gen();
+			}
+
+	}
+}
+
 
 void generateRandomWeights(float *W, int nR, int nC) {
 	for (int i = 0; i < nR; i++) {
@@ -138,48 +160,63 @@ int main(int argc, char* argv[]) {
 
 	float *X = new float[52 * 101 * 101];
 	int *y = new int[52];
+		
 	fillImage(X, y);
-
 
 	int N = 52;
 	int d = 101*101;
 	int C = 52;
-	int h1 = 1000;
+	int h1 = 10;
 
-	//float *X = new float[N * d * sizeof(float)];
-	//int *y = new int[N * 1 * sizeof(int)];
 	float *W1 = new float[d * h1 * sizeof(float)];
 	float *W2 = new float[h1 * C * sizeof(float)];
 	float loss_val = 0.0;
 	float *loss = &loss_val;
 
-	float alpha = 0.1;
+	float alpha = 0.5;
 
-	fillInputXOR(X, y);
 	generateRandomWeights(W1, d, h1);
 	generateRandomWeights(W2, h1, C);
 
+	float *dev_X, *dev_W1, *dev_W2;
+	int *dev_y;
+	cudaMalloc((void **)&dev_X, N * d * sizeof(float));
+	checkCUDAErrorWithLine("cudaMalloc failed!");
+	cudaMalloc((void **)&dev_y, N * 1 * sizeof(int));
+	checkCUDAErrorWithLine("cudaMalloc failed!");
+	cudaMalloc((void **)&dev_W1, d * h1 * sizeof(float));
+	checkCUDAErrorWithLine("cudaMalloc failed!");
+	cudaMalloc((void **)&dev_W2, h1 * C * sizeof(float));
+	checkCUDAErrorWithLine("cudaMalloc fc failed!");
 
-	//printf("X:\n");
-	//printArray2D(X, N, d);
-	//printf("\n");
-	//printf("W1:\n");
-	//printArray2D(W1, d, h1);
-	//printf("\n");
-	//printf("W2:\n");
-	//printArray2D(W2, h1, C);
-	//printf("\n");
+	cudaMemcpy(dev_X, X, N * d * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_y, y, N * 1 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_W1, W1, d * h1 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_W2, W2, h1 * C * sizeof(float), cudaMemcpyHostToDevice);
+
+
+	//std::ofstream myfile;
+	//myfile.open("loss_curve_XOR.txt");
 
 	for (int i = 1; i <= 100; i++) {
 		printf("\n\nIteration %d\n\n", i);
-		CharacterRecognition::trainStep(N, d, C, h1, alpha, X, y, loss, W1, W2);
+		CharacterRecognition::trainStep(N, d, C, h1, alpha, dev_X, dev_y, loss, dev_W1, dev_W2);
 
+		//myfile << i << " " << *loss << '\n';
 	}
 
-	CharacterRecognition::predictAndAcc(N, d, C, h1, X, y, W1, W2);
+	CharacterRecognition::predictAndAcc(N, d, C, h1, dev_X, dev_y, dev_W1, dev_W2);
 
-	//printArray2D(img, 101, 101);
+	//myfile.close();
 
+	cudaFree(dev_X);
+	checkCUDAErrorWithLine("cudaFree fc failed!");
+	cudaFree(dev_y);
+	checkCUDAErrorWithLine("cudaFree fc failed!");
+	cudaFree(dev_W1);
+	checkCUDAErrorWithLine("cudaFree fc failed!");
+	cudaFree(dev_W2);
+	checkCUDAErrorWithLine("cudaFree fc failed!");
 
 	delete[] X;
 	delete[] y;

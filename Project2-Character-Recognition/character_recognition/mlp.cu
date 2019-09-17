@@ -3,7 +3,7 @@
 #include "common.h"
 #include "mlp.h"
 
-#define blockSize 32
+#define blockSize 16
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg)
 
@@ -15,13 +15,19 @@ namespace CharacterRecognition {
         return timer;
     }
 
-	void printArray2D(float *X, int nR, int nC) {
+	void printArray2D(float *dev_X, int nR, int nC) {
+
+		float* X = new float[nR * nC];
+		cudaMemcpy(X, dev_X, nR * nC * sizeof(float), cudaMemcpyDeviceToHost);
+
 		for (int i = 0; i < nR; i++) {
 			for (int j = 0; j < nC; j++)
 				printf("%.4f ", X[i*nC + j]);
 			printf("\n");
 		}
 		printf("\n");
+
+		delete[] X;
 	}
         
     // TODO: __global__
@@ -164,12 +170,7 @@ namespace CharacterRecognition {
 
 	}
 
-	void softmaxExp(float *A, int m, int n) {
-		float *dev_A;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
+	void softmaxExp(float *dev_A, int m, int n) {
 
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (n + blockSize - 1) / blockSize;
@@ -178,16 +179,13 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernExp << <dimGrid, dimBlock >> > (dev_A, m, n);
-
-
-		cudaMemcpy(A, dev_A, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
-	void softmaxNormalize(float *A, int m, int n) {
+	void softmaxNormalize(float *dev_A, int m, int n) {
 		// TODO: Should be parallelized
+
+		float *A = new float[m * n];
+		cudaMemcpy(A, dev_A, m*n * sizeof(float), cudaMemcpyDeviceToHost);
 
 		for (int i = 0; i < m; i++) {
 			float sum = 0;
@@ -197,10 +195,21 @@ namespace CharacterRecognition {
 			for (int j = 0; j < n; j++)
 				A[i*n + j] /= sum;
 		}
+
+		cudaMemcpy(dev_A, A, m*n * sizeof(float), cudaMemcpyHostToDevice);
+
+		delete[] A;
 	}
 
-	void calculateLoss(float *probs, int N, int C, int *y, float* loss) {
+	void calculateLoss(float *dev_probs, int N, int C, int *dev_y, float* loss) {
 		// TODO: Should be parallelized
+
+		float *probs = new float[N * C];
+		cudaMemcpy(probs, dev_probs, N * C * sizeof(float), cudaMemcpyDeviceToHost);
+
+		int *y = new int[N];
+		cudaMemcpy(y, dev_y, N * 1 * sizeof(int), cudaMemcpyDeviceToHost);
+
 		float totalLoss = 0;
 		for (int i = 0; i < N; i++) {
 			int label = y[i];
@@ -210,55 +219,12 @@ namespace CharacterRecognition {
 		totalLoss /= N;
 
 		*loss = totalLoss;
+
+		delete[] probs;
+		delete[] y;
 	}
 
-
-
-
-	void softmaxDerivativeWrtScores(float *probs, int *y, float *dscores, int N, int C) {
-		/*
-		Calcluates dL/dscores . probs = softmax(scores)
-		dL/dscores = probs[range(N), y] -= 1
-		*/
-
-		float *dev_dscores, *dev_probs;
-		cudaMalloc((void **)&dev_dscores, N * C * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_dscores failed!");
-		cudaMalloc((void **)&dev_probs, N * C * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_probs failed!");
-
-		int *dev_y;
-		cudaMalloc((void **)&dev_y, N * sizeof(int));
-		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
-
-		cudaMemcpy(dev_dscores, probs, N * C * sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_probs, probs, N * C * sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_y, y, N * sizeof(float), cudaMemcpyHostToDevice);
-
-		int gridRows = (N + blockSize - 1) / blockSize;
-		int gridCols = (C + blockSize - 1) / blockSize;
-		dim3 dimGrid(gridCols, gridRows);
-		dim3 dimBlock(blockSize, blockSize);
-		kernDerivativeLossScores<<<dimGrid, dimBlock>>>(dev_probs, dev_y, dev_dscores, N, C);
-
-		cudaMemcpy(dscores, dev_dscores, N * C * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_dscores);
-		checkCUDAErrorWithLine("cudaFree dev_dscores failed!");
-		cudaFree(dev_probs);
-		checkCUDAErrorWithLine("cudaFree dev_probs failed!");
-		cudaFree(dev_y);
-		checkCUDAErrorWithLine("cudaFree dev_y failed!");
-		
-	}
-
-	void reLU(float *A, int m, int n) {
-		float *dev_A;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
-
+	void reLU(float *dev_A, int m, int n) {
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (n + blockSize - 1) / blockSize;
 
@@ -266,21 +232,9 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernReLU<<<dimGrid, dimBlock>>>(dev_A, m, n);
-
-
-		cudaMemcpy(A, dev_A, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
-	void derivativeReLU(float *A, int m, int n) {
-		float *dev_A;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
-
+	void derivativeReLU(float *dev_A, int m, int n) {
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (n + blockSize - 1) / blockSize;
 
@@ -288,26 +242,9 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernDerivativeReLU << <dimGrid, dimBlock >> > (dev_A, m, n);
-
-
-		cudaMemcpy(A, dev_A, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
-	void matrixMultiply(float *A, float *B, float *C, int m, int n, int k) {
-
-		float *dev_A, *dev_B, *dev_C;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-		cudaMalloc((void **)&dev_B, n * k * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-		cudaMalloc((void **)&dev_C, m * k * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_B, B, n * k * sizeof(float), cudaMemcpyHostToDevice);
+	void matrixMultiply(float *dev_A, float *dev_B, float *dev_C, int m, int n, int k) {
 
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (k + blockSize - 1) / blockSize;
@@ -316,30 +253,9 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_A, dev_B, dev_C, m, n, k);
-
-		cudaMemcpy(C, dev_C, m * k * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_B);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_C);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
-	void matrixElementMultiply(float *A, float *B, float *C, int m, int n) {
-
-		float *dev_A, *dev_B, *dev_C;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-		cudaMalloc((void **)&dev_B, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-		cudaMalloc((void **)&dev_C, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_B, B, m * n * sizeof(float), cudaMemcpyHostToDevice);
-
+	void matrixElementMultiply(float *dev_A, float *dev_B, float *dev_C, int m, int n) {
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (n + blockSize - 1) / blockSize;
 
@@ -347,57 +263,10 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernElementMatrixMultiply << <dimGrid, dimBlock >> > (dev_A, dev_B, dev_C, m, n);
-
-		cudaMemcpy(C, dev_C, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_B);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_C);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
-	void updateWeights(float *A, float *B, float *C, float alpha, int m, int n) {
 
-		float *dev_A, *dev_B, *dev_C;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-		cudaMalloc((void **)&dev_B, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-		cudaMalloc((void **)&dev_C, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
-		cudaMemcpy(dev_B, B, m * n * sizeof(float), cudaMemcpyHostToDevice);
-
-		int gridRows = (m + blockSize - 1) / blockSize;
-		int gridCols = (n + blockSize - 1) / blockSize;
-
-		dim3 dimGrid(gridCols, gridRows);
-		dim3 dimBlock(blockSize, blockSize);
-
-		kernElementMatrixAdd << <dimGrid, dimBlock >> > (dev_A, dev_B, dev_C, alpha, m, n);
-
-		cudaMemcpy(C, dev_C, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_B);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_C);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-	}
-
-	void matrixTranspose(float *A, float *B, int m, int n) {
-
-		float *dev_A, *dev_B;
-		cudaMalloc((void **)&dev_A, m * n * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_A failed!");
-		cudaMalloc((void **)&dev_B, n * m * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_B failed!");
-
-		cudaMemcpy(dev_A, A, m * n * sizeof(float), cudaMemcpyHostToDevice);
+	void matrixTranspose(float *dev_A, float *dev_B, int m, int n) {
 
 		int gridRows = (m + blockSize - 1) / blockSize;
 		int gridCols = (n + blockSize - 1) / blockSize;
@@ -406,96 +275,166 @@ namespace CharacterRecognition {
 		dim3 dimBlock(blockSize, blockSize);
 
 		kernMatrixTranspose << <dimGrid, dimBlock >> > (dev_A, dev_B, m, n);
-
-		cudaMemcpy(B, dev_B, n * m * sizeof(float), cudaMemcpyDeviceToHost);
-
-		cudaFree(dev_A);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
-		cudaFree(dev_B);
-		checkCUDAErrorWithLine("cudaFree dev_A failed!");
 	}
 
+	void softmaxDerivativeWrtScores(float *dev_probs, int *dev_y, float *dev_dscores, int N, int C) {
+		/*
+		Calcluates dL/dscores . probs = softmax(scores)
+		dL/dscores = probs[range(N), y] -= 1
+		*/
+
+		cudaMemcpy(dev_dscores, dev_probs, N * C * sizeof(float), cudaMemcpyDeviceToDevice);
+
+		int gridRows = (N + blockSize - 1) / blockSize;
+		int gridCols = (C + blockSize - 1) / blockSize;
+		dim3 dimGrid(gridCols, gridRows);
+		dim3 dimBlock(blockSize, blockSize);
+		kernDerivativeLossScores << <dimGrid, dimBlock >> > (dev_probs, dev_y, dev_dscores, N, C);
+
+	}
 
 	void calculateDerviativeW2(int N, int d, int C, int h1, float *dscores, float *X2, float *dW2) {
-		float *X2Trans = new float[h1 * N * sizeof(float)];
+		float *X2Trans;
+		cudaMalloc((void**)&X2Trans, h1 * N * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc X2Trans failed");
 		matrixTranspose(X2, X2Trans, N, h1);
 
 
 		// dL/dW2 = X2.T * dscores (h1xN X NxC  = h1xC)
 		matrixMultiply(X2Trans, dscores, dW2, h1, N, C);
 
-		delete[] X2Trans;
+		cudaFree(X2Trans);
+		checkCUDAErrorWithLine("cudaFree X2Trans faild");
 	}
 
 	void calculateDerviativeW1(int N, int d, int C, int h1, float *X, float *fc, float *W2, float *dscores, float *dW1) {
-		float *dW1_1 = new float[N * h1 * sizeof(float)];
-		float *W2Trans = new float[C * h1 * sizeof(float)];
+		float *dW1_1;
+		cudaMalloc((void**)&dW1_1, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc  failed");
+		float *W2Trans;
+		cudaMalloc((void**)&W2Trans, C * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc  failed");
+
 		matrixTranspose(W2, W2Trans, h1, C);
 
 		// dW1_1 = dscores * W2.T
 		matrixMultiply(dscores, W2Trans, dW1_1, N, C, h1);
 
-		float *dfcRelu = new float[N * h1 * sizeof(float)];
-		dfcRelu = (float *)memcpy((void *)dfcRelu, (void *)fc, N * h1 * sizeof(float));
+		float *dfcRelu;
+		cudaMalloc((void**)&dfcRelu, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc  failed");
+
+		cudaMemcpy(dfcRelu, fc, N * h1 * sizeof(float), cudaMemcpyDeviceToDevice);
+
 		derivativeReLU(dfcRelu, N, h1);
 
-		float *dfc = new float[N * h1 * sizeof(float)];
+		float *dfc;
+		cudaMalloc((void**)&dfc, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc  failed");
+
 		matrixElementMultiply(dW1_1, dfcRelu, dfc, N, h1);
 
-		float *XTrans = new float[d * N * sizeof(float)];
+		float *XTrans;
+		cudaMalloc((void**)&XTrans, d * N * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc  failed");
+
 		matrixTranspose(X, XTrans, N, d);
 
 		matrixMultiply(XTrans, dfc, dW1, d, N, h1);
 
-		delete[] dW1_1;
-		delete[] W2Trans;
-		delete[] dfc;
-		delete[] dfcRelu;
-		delete[] XTrans;
+		cudaFree(dW1_1);
+		checkCUDAErrorWithLine("cudaFree  failed");
+		cudaFree(W2Trans);
+		checkCUDAErrorWithLine("cudaFree  failed");
+		cudaFree(dfcRelu);
+		checkCUDAErrorWithLine("cudaFree  failed");
+		cudaFree(dfc);
+		checkCUDAErrorWithLine("cudaFree  failed");
+		cudaFree(XTrans);
+		checkCUDAErrorWithLine("cudaFree  failed");
+
 	}
 
-	void predict(int N, int d, int C, int h1, float *X, int *y, float *W1, float *W2, int* predictions) {
+	void updateWeights(float *dev_A, float *dev_B, float *dev_C, float alpha, int m, int n) {
 
-		float *fc = new float[N * h1 * sizeof(float)];
-		matrixMultiply(X, W1, fc, N, d, h1);
+		int gridRows = (m + blockSize - 1) / blockSize;
+		int gridCols = (n + blockSize - 1) / blockSize;
 
-		// Apply ReLU activation: X2 = ReLU(X2);
-		float *X2 = new float[N * h1 * sizeof(float)];
-		X2 = (float *)memcpy((void *)X2, (void *)fc, N * h1 * sizeof(float));
-		reLU(X2, N, h1);
+		dim3 dimGrid(gridCols, gridRows);
+		dim3 dimBlock(blockSize, blockSize);
 
-		// calculate log_scores for softmax
-		float *scores = new float[N * C * sizeof(float)];
-		matrixMultiply(X2, W2, scores, N, h1, C);
-		printArray2D(scores, N, C);
-
-		float *dev_scores;
-		cudaMalloc((void **)&dev_scores, N * C * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_scores failed!");
-		int *dev_pred;
-		cudaMalloc((void **)&dev_pred, N * sizeof(int));
-		checkCUDAErrorWithLine("cudaMalloc dev_pred failed!");
-
-		cudaMemcpy(dev_scores, scores, N * C * sizeof(float), cudaMemcpyHostToDevice);
-
-		int numBlocks = (N + blockSize - 1) / blockSize;
-
-		kernMax << <numBlocks, blockSize >> > (dev_scores, dev_pred, N, C);
-
-		cudaMemcpy(predictions, dev_pred, N * sizeof(int), cudaMemcpyDeviceToHost);
-
-		delete[] fc;
-		delete[] X2;
-		delete[] scores;
-		cudaFree(dev_scores);
-		checkCUDAErrorWithLine("cudaFree dev_scores failed!");
-		cudaFree(dev_pred);
-		checkCUDAErrorWithLine("cudaFree dev_pred failed!");
-		
+		kernElementMatrixAdd << <dimGrid, dimBlock >> > (dev_A, dev_B, dev_C, alpha, m, n);
 	}
 
 
 
+
+	void allocateMemoryTrain(int N, int d, int C, int h1, float **fc, float **X2, float **scores, float **dscores, float **dW1, float **dW2) {
+
+		cudaMalloc((void **)fc, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)X2, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)scores, N * C * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)dscores, N * C * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)dW2, h1 * C * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)dW1, d * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+	}
+
+	void freeMemoryTrain(float *fc, float *X2, float *scores, float *dscores, float *dW1, float *dW2) {
+		cudaFree(fc);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(X2);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(scores);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(dscores);
+		checkCUDAErrorWithLine("cudaaFree fc failed!");
+
+		cudaFree(dW2);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(dW1);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+	}
+
+	void allocateMemoryInference(int N, int d, int C, int h1, float **fc, float **X2, float **scores) {
+
+		cudaMalloc((void **)fc, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)X2, N * h1 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+		cudaMalloc((void **)scores, N * C * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc fc failed!");
+
+	}
+
+	void freeMemoryInference(float *fc, float *X2, float *scores) {
+		cudaFree(fc);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(X2);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+		cudaFree(scores);
+		checkCUDAErrorWithLine("cudaFree fc failed!");
+
+	}
 
 	// TODO: implement required elements for MLP sections 1 and 2 here
 
@@ -507,48 +446,39 @@ namespace CharacterRecognition {
 			W1 -> d x h1
 			W2 -> h1 x C
 		*/
-		//printf("W1\n");
-		//printArray2D(W1, d, h1);
 
-		//printf("W2\n");
-		//printArray2D(W2, h1, C);
+		cudaEvent_t start, stop;
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
+
+		cudaEventRecord(start);
+
 
 		// first fully connected layer X2 = X*W1
-		float *fc = new float[N * h1 * sizeof(float)];
+		float *fc, *X2, *scores, *dscores,  *dW1,  *dW2;
+		allocateMemoryTrain(N, d, C, h1, &fc, &X2, &scores, &dscores, &dW1, &dW2);
+
+
 		matrixMultiply(X, W1, fc, N, d, h1);
-		//printf("FC:\n");
+		//printf("Fc:\n");
 		//printArray2D(fc, N, h1);
 
 		// Apply ReLU activation: X2 = ReLU(X2);
-		float *X2 = new float[N * h1 * sizeof(float)];
-		X2 = (float *) memcpy((void *)X2, (void *)fc, N * h1 * sizeof(float));
+		
+		cudaMemcpy(X2, fc, N * h1 * sizeof(float), cudaMemcpyDeviceToDevice);
 		reLU(X2, N, h1);
 		//printf("ReLU:\n");
 		//printArray2D(X2, N, h1);
 
 		// calculate log_scores for softmax
-		float *scores = new float[N * C * sizeof(float)];
 		matrixMultiply(X2, W2, scores, N, h1, C);
-		//printf("Log scores:\n");
-		//printArray2D(scores, N, C);
-
-		//for (int i = 0; i < N; i++) {
-		//	float max = scores[i*C + 0];
-		//	for (int j = 1; j < C; j++) {
-		//		if (scores[i*C + j] > max) max = scores[i*C + j];
-		//	}
-		//	
-		//	for (int j = 0; j < C; j++) {
-		//		scores[i*C + j] -= max;
-		//	}
-		//}
-
+		//printf("Scores:\n");
 		//printArray2D(scores, N, C);
 
 		// calculate softmax probability: apply exp on all elements and normalize by sum of columns
 		softmaxExp(scores, N, C);
 		softmaxNormalize(scores, N, C);
-		//printf("Softmax probabilities:\n");
+		//printf("Probs:\n");
 		//printArray2D(scores, N, C);
 
 		// calculate the loss
@@ -557,40 +487,53 @@ namespace CharacterRecognition {
 
 
 		// **** BACKPROPAGATION STARTS *****
-		// dL/dscores
-		float *dscores = new float[N * C * sizeof(float)];
 		softmaxDerivativeWrtScores(scores, y, dscores, N, C);
 
-		//printf("dL/dscores\n");
-		//printArray2D(dscores, N, C);
-
-		float *dW2 = new float[h1 * C * sizeof(float)];
 		calculateDerviativeW2(N, d, C, h1, dscores, X2, dW2);
 
-		//printf("dW2\n");
-		//printArray2D(dW2, h1, C);
-
-		float *dW1 = new float[d * h1 * sizeof(float)];
 		calculateDerviativeW1(N, d, C, h1, X, fc, W2, dscores, dW1);
-		
-		//printf("dW1\n");
-		//printArray2D(dW1, d, h1);
 
 		updateWeights(W1, dW1, W1, alpha, d, h1);
-		//printf("W1\n");
-		//printArray2D(W1, d, h1);
 
 		updateWeights(W2, dW2, W2, alpha, h1, C);
-		//printf("W2\n");
-		//printArray2D(W2, h1, C);
 
-		delete[] X2;
-		delete[] scores;
-		delete[] dscores;
-		delete[] dW1;
-		delete[] dW2;
-		delete[] fc;
+		freeMemoryTrain(fc, X2, scores, dscores, dW1, dW2);
 
+		cudaEventRecord(stop);
+		cudaEventSynchronize(stop);
+		float milliseconds = 0;
+		cudaEventElapsedTime(&milliseconds, start, stop);
+		printf("Time taken for one train step: %.2f\n", milliseconds);
+
+
+	}
+
+
+	void predict(int N, int d, int C, int h1, float *X, int *y, float *W1, float *W2, int* predictions) {
+
+		float *fc, *X2, *scores;
+		allocateMemoryInference(N, d, C, h1, &fc, &X2, &scores);
+
+		matrixMultiply(X, W1, fc, N, d, h1);
+
+		cudaMemcpy(X2, fc, N * h1 * sizeof(float), cudaMemcpyDeviceToDevice);
+		reLU(X2, N, h1);
+
+		matrixMultiply(X2, W2, scores, N, h1, C);
+
+		// calculate softmax probability: apply exp on all elements and normalize by sum of columns
+		softmaxExp(scores, N, C);
+		softmaxNormalize(scores, N, C);
+
+
+		int *dev_pred;
+		cudaMalloc((void **)&dev_pred, N * C * sizeof(int));
+
+		int numBlocks = (N + blockSize - 1) / blockSize;
+		kernMax << <numBlocks, blockSize >> > (scores, dev_pred, N, C);
+		cudaMemcpy(predictions, dev_pred, N * sizeof(int), cudaMemcpyDeviceToHost);
+
+		freeMemoryInference(fc, X2, scores);
 	}
 
 	void predictAndAcc(int N, int d, int C, int h1, float *X, int *y,  float *W1, float *W2) {
@@ -599,14 +542,23 @@ namespace CharacterRecognition {
 		predict(N, d, C, h1, X, y, W1, W2, predictions);
 
 		for (int i = 0; i < N; i++) {
-			printf("Predictions for %d example is %d\n", i + 1, predictions[i]);
+			printf("Predictions for %d example is %d\n", i + 1, predictions[i]+1);
 		}
+
+		int *host_y = new int[N];
+		cudaMemcpy(host_y, y, N * 1 * sizeof(int), cudaMemcpyDeviceToHost);
 
 		float accuracy = 0.0;
 		for (int i = 0; i < N; i++) {
-			accuracy += (predictions[i] == y[i]);
+			accuracy += (predictions[i] == host_y[i]);
 		}
 		accuracy /= N;
+
+		//printf("W1:\n");
+		//printArray2D(W1, d, h1);
+
+		//printf("W2:\n");
+		//printArray2D(W2, h1, C);
 
 		printf("\n\nAccuracy is %.4f\n\n", accuracy);
 	}
