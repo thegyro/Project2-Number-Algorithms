@@ -48,9 +48,9 @@ In compaction, we to remove all elements from the array which do not satisfy a c
 
 2) Performannce graphs comparing the differnet implementations are included below. For work-efficient compaction, I implemented two versions, one of which is inefficient but passes all the test cases for array sizes upto 2^25. This implementation calls the work-efficient scan function implemented as a part of the scan setup. But to stick to the API, it also does several `cudaMemcpy` from device to host and host to device which is not required if the interemediate scan buffers are never going to be needed on the CPU. However, the more efficient version is not passing the test case for not-power of two for array size `2^25`. 
 
-
+	<p>
 	<img src="data/scan_perf_15.png" style="width:40%">	<img src="data/compact_perf_15.png" style="width:40%">
-
+	</p>
 	<img src="data/scan_perf_20.png" style="width:45%">	<img src="data/compact_perf_20.png" style="width:45%">
 
 	<img src="data/scan_perf_25.png" style="width:45%">	<img src="data/compact_perf_25.png" style="width:45%">
