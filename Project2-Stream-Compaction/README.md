@@ -31,6 +31,18 @@ Scan and Compaction can be best understood with the following example:
   - output
     - [1 5 1 2 3]
 
+## GPU Implementation
+### Naive Scan
+Though exclusive scan looks like a sequential operation, we can parallelize by dividing the computation to `log(n)` passes through the array. In the first pass, we do `a[i] = a[i] + a[i-1]`. The invariant we maintain is that by the `k`th pass, we have the correct values in the array upto to the index `2^(k-1)` (excluded), and we perform the two-sum addition only for `index >= 2^(k-1)`. After `log(n)` passes, the array will contain an inclsuive scan which we convert to exclusive by a shift-right operation. By utilizing `n` threads, each pass requires `O(1)` time and we have `log(n)` passes. So totally the time complexity is `O(log(n))`. However, what about the total number of adds? A sequential scan will only perform `n` adds. The naive parallel implementation odes `O(n)` adds for each pass and total number of adds is therefore `O(nlogn)`.
+
+### Work-efficient Scan
+Work-efficient implementation aims to bring down the total number of addition operations to `O(n)`. This approach uses a balanced-binary tree view to structure the computation. In the up-sweep phase, we go from the leaf nodes to the root and keep building partial-sums in-place. In the down-sweep phase, we traverse back from the root to make use of the partial-sum from before and build the scan in-place. This approach requires the array to be a power of 2, so when the array size is not one we pad it to the next 2-power. 
+
+### Work-efficient Compaction
+
+In compaction, we to remove all elements from the array which do not satisfy a certain criterion. We first create a boolean array indicating which all elements satisfy the criteria. After this, we call the work-efficient scan on the _boolean array_ to build the prefix-sum. For all the elements which are going to be included in the final array, the exclusive scan gives at what _index_ they must be writtten to. This is done by a parallel scatter operation. 
+
+
 ### Performance Analysis
 1) A block size that worked well for each of the configurations was `128`. I experimented with different size options from 256 to 512 and the performance remained similar. Decreasing the block size below `64` led to a drop in performance for all the GPU implementations. Thus, all the comparisons  are benchmarked by fixing block size as 128.
 
@@ -49,3 +61,11 @@ Scan and Compaction can be best understood with the following example:
 	![](data/compact_perf_20.png)
 
 	![](data/compact_perf_25.png)
+
+
+*What do the above graphs mean?*
+
+For smaller inputs, the CPU implementation is significantly faster than the GPU one. The GPU naive scan invokes a kernel `log(n)` times. There is a lot of overhead incurred while invoking a kernel withtin a loop. For small sizes it doesn't justify the cost. The overhead is compounded in  work-efficient scan.  So for small array sizes we are better off with the CPU. However, the CPU scan _also_ performs better than the naive one for large array sizes. Why? I am theorizing this to be because of the additional number of adds required in the parallel approach. This is also reflected in the fact that the the work-efficient scan is faster than the CPU implementation for the larger array size. Thrust, unsurprisingly, performs better than everything I have implemented. This is probably because, though the algorithmic complexity might still be the same, Thrust is making better utilizattion of hardware resources: using shared memory and reducing global memory calls, and also avoiding issues like bank conflicts (when accessing shared memory).
+
+Work-efficient compaction is significantly slower if use the same implementation as work-efficient scan one. This is because of additional `cudaMemcpy` calls from Host to Device and Device to Host. We can improve this by minimizing the CPU-GPU transfers by maintaining all the intermediate arrays in the GPU itself. But scan updates the array in place and we require the boolean array while performing scatter, so we have to copy it to another memory location on the GPU. This is a better alternative compared as it's a Device to Device transfer as opposed tot Device To Host.
+
