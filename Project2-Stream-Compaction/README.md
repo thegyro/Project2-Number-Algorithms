@@ -69,3 +69,59 @@ For smaller inputs, the CPU implementation is significantly faster than the GPU 
 
 Work-efficient compaction is significantly slower if use the same implementation as work-efficient scan one. This is because of additional `cudaMemcpy` calls from Host to Device and Device to Host. We can improve this by minimizing the CPU-GPU transfers by maintaining all the intermediate arrays in the GPU itself. But scan updates the array in place and we require the boolean array while performing scatter, so we have to copy it to another memory location on the GPU. This is a better alternative compared as it's a Device to Device transfer as opposed tot Device To Host.
 
+### Tests output
+
+```
+****************
+** SCAN TESTS **
+****************
+    [   8  18  36  48  30   4   0  24  16  19  40  47  23 ...  23   0 ]
+==== cpu scan, power-of-two ====
+   elapsed time: 0.0017ms    (std::chrono Measured)
+    [   0   8  26  62 110 140 144 144 168 184 203 243 290 ... 25535 25558 ]
+==== cpu scan, non-power-of-two ====
+   elapsed time: 0.0016ms    (std::chrono Measured)
+    [   0   8  26  62 110 140 144 144 168 184 203 243 290 ... 25468 25509 ]
+    passed
+==== naive scan, power-of-two ====
+   elapsed time: 0.251904ms    (CUDA Measured)
+    passed
+==== naive scan, non-power-of-two ====
+   elapsed time: 0.058368ms    (CUDA Measured)
+    passed
+==== work-efficient scan, power-of-two ====
+   elapsed time: 0.099328ms    (CUDA Measured)
+    passed
+==== work-efficient scan, non-power-of-two ====
+   elapsed time: 0.142368ms    (CUDA Measured)
+    passed
+==== thrust scan, power-of-two ====
+   elapsed time: 0.05264ms    (CUDA Measured)
+    passed
+==== thrust scan, non-power-of-two ====
+   elapsed time: 0.082112ms    (CUDA Measured)
+    passed
+
+*****************************
+** STREAM COMPACTION TESTS **
+*****************************
+    [   2   2   2   2   0   0   0   2   0   1   0   3   3 ...   1   0 ]
+==== cpu compact without scan, power-of-two ====
+   elapsed time: 0.0026ms    (std::chrono Measured)
+    [   2   2   2   2   2   1   3   3   2   2   1   3   2 ...   1   1 ]
+    passed
+==== cpu compact without scan, non-power-of-two ====
+   elapsed time: 0.0164ms    (std::chrono Measured)
+    [   2   2   2   2   2   1   3   3   2   2   1   3   2 ...   3   1 ]
+    passed
+==== cpu compact with scan ====
+   elapsed time: 0.124ms    (std::chrono Measured)
+    [   2   2   2   2   2   1   3   3   2   2   1   3   2 ...   1   1 ]
+    passed
+==== work-efficient compact, power-of-two ====
+   elapsed time: 0.459776ms    (CUDA Measured)
+    passed
+==== work-efficient compact, non-power-of-two ====
+   elapsed time: 0.529408ms    (CUDA Measured)
+    passed```
+
