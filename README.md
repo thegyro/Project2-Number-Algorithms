@@ -10,4 +10,4 @@ Project 2 - Number Algorithms**
 
 
 1) [Project-Stream Compaction](Project2-Stream-Compaction/README.md)
-2) [Project-Character-Recognition](Project2-Character-Recognition/REAME.md)
+2) [Project-Character-Recognition](Project2-Character-Recognition/README.md)
