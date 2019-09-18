@@ -94,6 +94,12 @@ The performance analysis is based on generating random images of different resol
 ![](data/perf_neurons.png)
 
 
+As we scale to bigger models and higher resolution images, memory is definitely a main bottleneck. Fitting the enitre dataset into the GPU global memory will be impossible. So we have to work the CPU hard disk. From a computatiton perspective, there can be several improvements 
+
+1) Efficient matrix-multiply operations by the tiling approach using shared memory. As of now, I am a doing a naive matrix multiplication which is doing many redundant global memory access.
+
+2) Loss calculation can be parallelized by using parallel-reduction written in stream-compaction. The tricky part is to tweak the implementation to work access the index in a 2D view.
+
 ## Extra Credit
 The forward and backward pass is computed for all `N` exmaples simultaneously in one-shot using matrix-multiply and slicing operations.
 
