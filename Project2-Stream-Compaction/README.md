@@ -63,7 +63,7 @@ In compaction, we to remove all elements from the array which do not satisfy a c
 	![](data/compact_perf_25.png)
 
 
-*What do the above graphs mean?*
+**What do the above graphs mean?**
 
 For smaller inputs, the CPU implementation is significantly faster than the GPU one. The GPU naive scan invokes a kernel `log(n)` times. There is a lot of overhead incurred while invoking a kernel withtin a loop. For small sizes it doesn't justify the cost. The overhead is compounded in  work-efficient scan.  So for small array sizes we are better off with the CPU. However, the CPU scan _also_ performs better than the naive one for large array sizes. Why? I am theorizing this to be because of the additional number of adds required in the parallel approach. This is also reflected in the fact that the the work-efficient scan is faster than the CPU implementation for the larger array size. Thrust, unsurprisingly, performs better than everything I have implemented. This is probably because, though the algorithmic complexity might still be the same, Thrust is making better utilizattion of hardware resources: using shared memory and reducing global memory calls, and also avoiding issues like bank conflicts (when accessing shared memory).
 
