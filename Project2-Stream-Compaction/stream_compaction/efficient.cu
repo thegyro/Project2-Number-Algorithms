@@ -2,6 +2,9 @@
 #include <cuda_runtime.h>
 #include "common.h"
 #include "efficient.h"
+#include "thrust.h"
+#include <thrust/scan.h>
+#include <thrust/device_vector.h>
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg)
 
@@ -107,21 +110,49 @@ namespace StreamCompaction {
 		}
 
 
-		void scanBlock(int n, int *odata, const int *idata) {
-			//printxxx(n, idata);
+		void scanShared(int n, int *odata, const int *idata) {
 			bool exception = false;
-			int *dev_idata;
+
+			int *dev_idata, *dev_scanSumBlock, *dev_addLastElements, *dev_scanSum, *dev_odata;
+
+			int d_max = ilog2ceil(n);
+
+			int twoPowN = 1 << d_max;
+			if (n != twoPowN) {
+
+				int diff = twoPowN - n;
+
+				cudaMalloc((void **)&dev_idata, (n + diff) * sizeof(int));
+				checkCUDAErrorWithLine("cudaMalloc dev_odata1 failed!");
+
+				int threadsPerBlock = 1024;
+				int blocksToLaunch = (n + diff + threadsPerBlock - 1) / threadsPerBlock;
+				resetZeros << <blocksToLaunch, threadsPerBlock >> > (n + diff, dev_idata);
+
+				cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+				n = n + diff;
+			}
+			else {
+				cudaMalloc((void **)&dev_idata, n * sizeof(int));
+				checkCUDAErrorWithLine("cudaMalloc dev_idata failed!");
+
+				cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+			}
 
 			int blockSize = 1024;
 			int numBlocks = (n + blockSize - 1) / blockSize;
 			int numElements = numBlocks;
-			//printf("Hey %d\n", numBlocks);
-			//int numBlocks = 1;
 
-			cudaMalloc((void **)&dev_idata, n * sizeof(int));
-			checkCUDAErrorWithLine("cudaMalloc dev_idata failed!");
+			cudaMalloc((void **)&dev_scanSumBlock, n * sizeof(int));
+			cudaMalloc((void **)&dev_addLastElements, numElements * sizeof(int));
+			cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
+			cudaMalloc((void **)&dev_odata, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc failed!");
 
 			cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+
+			//thrust::device_ptr<int> dev_idataItr(dev_addLastElements);
+			//thrust::device_ptr<int> dev_odataItr(dev_scanSum);
 
 			try {
 				timer().startGpuTimer();
@@ -130,60 +161,23 @@ namespace StreamCompaction {
 				exception = true;
 			}
 
-			int *dev_scanSumBlock;
-			cudaMalloc((void **)&dev_scanSumBlock, n * sizeof(int));
-
-			int *dev_addLastElements;
-			cudaMalloc((void **)&dev_addLastElements, numElements * sizeof(int));
-
 			kernscanBlock << <numBlocks, blockSize/2, (blockSize) * sizeof(int) >> > (n, dev_scanSumBlock, dev_addLastElements, dev_idata);
 
-
-			//cudaMemcpy(odata, dev_scanSumBlock, n * sizeof(int), cudaMemcpyDeviceToHost);
-			//printxxx(n, odata);
-
-			;
-
-			//int *dev_lastElementsScan;
-			//cudaMalloc((void **)&dev_lastElementsScan, numElements * sizeof(int));
-			//checkCUDAErrorWithLine("cudaMalloc failed!");
-
-			int threadsPerBlock = 2;
-			int blocksToLaunch = (numBlocks + threadsPerBlock - 1) / threadsPerBlock;
-			//copyLastElements <<<blocksToLaunch, threadsPerBlock >>>(numElements, blockSize, dev_lastElementsScan, dev_scanSumBlock);
-
-
-			//addLastElement << <blocksToLaunch, threadsPerBlock >> > (numElements, blockSize, dev_addLastElements, dev_lastElementsScan, dev_idata);
-
-			//int *addElementsScan = new int[numElements];
-			//cudaMemcpy(addElementsScan, dev_addLastElements, numElements * sizeof(int), cudaMemcpyDeviceToHost);
-			//printxxx(numElements, addElementsScan);
-
-			//int *scanSum = new int[numElements];
-			int *dev_scanSum;
-			cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
 			scanCompact(numElements, dev_scanSum, dev_addLastElements);
-			//printxxx(numElements, scanSum);
+			//thrust::exclusive_scan(dev_idataItr, dev_idataItr + numElements, dev_odataItr);
 
-			//int *dev_scanSum;
-			//cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
-			//cudaMemcpy(dev_scanSum, scanSum, numElements * sizeof(int), cudaMemcpyHostToDevice);
-
-			//cudaMemcpy(odata, dev_addLastElements, numElements * sizeof(int), cudaMemcpyDeviceToHost);
-			//printxxx(numElements, odata);
-
-			int *dev_odata;
-			cudaMalloc((void **)&dev_odata, n * sizeof(int));
 			addScanMain<<<numBlocks, blockSize >>>(n, dev_odata, dev_scanSum, dev_scanSumBlock);
 
 			if (!exception)
 				timer().endGpuTimer();
 
 			cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
-			//printxxx(n, odata);
-			
+
 			cudaFree(dev_idata);
+			cudaFree(dev_scanSum);
 			cudaFree(dev_scanSumBlock);
+			cudaFree(dev_addLastElements);
+			cudaFree(dev_odata);
 		}
 
 		__global__ void upSweep(int n, int d, int *idata) {
@@ -260,9 +254,10 @@ namespace StreamCompaction {
 			}
 
 			// reset last element to zero
-			int* zero = new int[1];
-			zero[0] = 0;
-			cudaMemcpy(dev_idata + n - 1, zero, sizeof(int), cudaMemcpyHostToDevice);
+			//int* zero = new int[1];
+			//zero[0] = 0;
+			//cudaMemcpy(dev_idata + n - 1, zero, sizeof(int), cudaMemcpyHostToDevice);
+			cudaMemset(dev_idata + n - 1, 0, sizeof(int));
 
 			
 			for(int d = d_max-1; d >= 0; d--) {
@@ -326,9 +321,10 @@ namespace StreamCompaction {
 			}
 
 			// reset last element to zero
-			int* zero = new int[1];
-			zero[0] = 0;
-			cudaMemcpy(dev_idata + n - 1, zero, sizeof(int), cudaMemcpyHostToDevice);
+			//int* zero = new int[1];
+			//zero[0] = 0;
+			//cudaMemcpy(dev_idata + n - 1, zero, sizeof(int), cudaMemcpyHostToDevice);
+			cudaMemset(dev_idata + n - 1, 0, sizeof(int));
 
 
 			for (int d = d_max - 1; d >= 0; d--) {
@@ -411,6 +407,64 @@ namespace StreamCompaction {
            
             return count;
         }
+
+
+		int compactShared(int n, int *odata, const int *idata) {
+
+
+			int numThreads = 128;
+			int numBlocks = (n + numThreads - 1) / numThreads;
+
+			int *dev_checkZeros, *dev_sumIndices, *dev_odata, *dev_idata;
+
+			cudaMalloc((void **)&dev_checkZeros, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc dev_checkZeros failed!");
+			cudaMalloc((void **)&dev_sumIndices, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc dev_sumIndices failed!");
+			cudaMalloc((void **)&dev_odata, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc dev_odata failed!");
+			cudaMalloc((void **)&dev_idata, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc dev_idata failed!");
+
+			cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+
+			timer().startGpuTimer();
+
+			StreamCompaction::Common::kernMapToBoolean << <numBlocks, numThreads >> > (n, dev_checkZeros, dev_idata);
+
+			int *checkZeros = new int[n];
+			cudaMemcpy(checkZeros, dev_checkZeros, n * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+			int *sumIndices = new int[n];
+			scanShared(n, sumIndices, checkZeros);
+
+			cudaMemcpy(dev_sumIndices, sumIndices, n * sizeof(int), cudaMemcpyHostToDevice);
+
+			StreamCompaction::Common::kernScatter << <numBlocks, numThreads >> > (n, dev_odata, dev_idata, dev_checkZeros, dev_sumIndices);
+
+
+			timer().endGpuTimer();
+
+			cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+
+			int count = checkZeros[n - 1] == 0 ? sumIndices[n - 1] : sumIndices[n - 1] + 1;
+
+			//delete[] checkZeros;
+			//delete[] sumIndices;
+
+			//printf("hey\n");
+
+			cudaFree(dev_idata);
+			cudaFree(dev_odata);
+			cudaFree(dev_checkZeros);
+			cudaFree(dev_sumIndices);
+
+
+			return count;
+		}
 
 
 		//int compact(int n, int *odata, const int *idata) {
