@@ -504,12 +504,12 @@ namespace StreamCompaction {
 
 			cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
 
-			int *sumIndices = new int[n];
-			cudaMemcpy(sumIndices, dev_sumIndices, n * sizeof(int), cudaMemcpyDeviceToHost);
-			int *checkZeros = new int[n];
-			cudaMemcpy(checkZeros, dev_checkZeros, n * sizeof(int), cudaMemcpyDeviceToHost);
+			int *sumIndices = new int[1];
+			cudaMemcpy(sumIndices, dev_sumIndices + n-1, 1 * sizeof(int), cudaMemcpyDeviceToHost);
+			int *checkZeros = new int[1];
+			cudaMemcpy(checkZeros, dev_checkZeros + n-1, 1 * sizeof(int), cudaMemcpyDeviceToHost);
 
-			int count = checkZeros[n - 1] == 0 ? sumIndices[n - 1] : sumIndices[n - 1] + 1;
+			int count = checkZeros[0] == 0 ? sumIndices[0] : sumIndices[0] + 1;
 
 			delete[] checkZeros;
 			delete[] sumIndices;
