@@ -14,12 +14,177 @@ namespace StreamCompaction {
             return timer;
         }
 
+		void printxxx(int n, const int *a) {
+			for (int i = 0; i < n; i++) {
+				printf("%d ", a[i]);
+			}
+			printf("\n\n\n");
+		}
+
 		__global__ void resetZeros(int n, int *a) {
 			int index = (blockDim.x*blockIdx.x) + threadIdx.x;
 			if (index >= n) return;
 			a[index] = 0;
 		}
 
+
+
+		__global__ void kernscanBlock(int n, int *odata, int* out_last, const int *idata) {
+			
+			extern __shared__ int temp[];
+
+			int idx = threadIdx.x;
+			int tid = (blockDim.x*blockIdx.x) + threadIdx.x;
+			int numPerBlock = 2 * blockDim.x;
+
+			if (tid >= n) return;
+
+			// copy the data this idx boi has to work with to shared memory
+			temp[2*idx] = idata[2*tid];
+			temp[2*idx + 1] = idata[2*tid + 1];
+
+			int offset = 1;
+			for (int d = numPerBlock>> 1; d > 0; d >>=1) {
+				__syncthreads();
+
+				if (idx < d) {
+
+					int k1 = offset * (2 * idx + 1) - 1;
+					int k2 = offset * (2 * idx + 2) - 1;
+					temp[k2] += temp[k1];
+				}
+
+				offset = 2 * offset;
+			}
+
+			if (idx == 0) { temp[numPerBlock - 1] = 0; }
+
+			for (int d = 1; d < numPerBlock; d *= 2) {
+				offset >>= 1;
+				__syncthreads();
+				if (idx < d) {
+
+					int k1 = offset * (2 * idx + 1) - 1;
+					int k2 = offset * (2 * idx + 2) - 1;
+
+					int tmp = temp[k1];
+					temp[k1] = temp[k2];
+					temp[k2] += tmp;
+				}
+			}
+
+			__syncthreads();
+			
+			odata[2 * tid] = temp[2 * idx]; // has to updated with block number
+			odata[2 * tid + 1] = temp[2 * idx + 1];
+
+			if (idx == 0) {
+				int last = numPerBlock * blockIdx.x + numPerBlock - 1;
+				out_last[blockIdx.x] = temp[numPerBlock - 1] + idata[last];
+			}
+		}
+
+		__global__ void copyLastElements(int n, int blockSize, int *odata, const int *idata) {
+			int tid = (blockDim.x*blockIdx.x) + threadIdx.x;
+			if (tid >= n) return;
+
+			odata[tid] = idata[tid*blockSize + blockSize - 1];
+		}
+
+		__global__ void addLastElement(int n, int blockSize, int *odata, const int *scanSum, const int *idata) {
+			int tid = (blockDim.x*blockIdx.x) + threadIdx.x;
+			if (tid >= n) return;
+
+			odata[tid] = scanSum[tid] + idata[tid*blockSize + blockSize - 1];
+			//odata[tid] = scanSum[tid];
+		}
+
+		__global__ void addScanMain(int n, int *odata, const int *scanSum, const int *scanSumBlock) {
+			int tid = (blockDim.x*blockIdx.x) + threadIdx.x;
+			if (tid >= n) return;
+
+			odata[tid] = scanSumBlock[tid] + scanSum[blockIdx.x];
+		}
+
+
+		void scanBlock(int n, int *odata, const int *idata) {
+			//printxxx(n, idata);
+			bool exception = false;
+			int *dev_idata;
+
+			int blockSize = 1024;
+			int numBlocks = (n + blockSize - 1) / blockSize;
+			int numElements = numBlocks;
+			//printf("Hey %d\n", numBlocks);
+			//int numBlocks = 1;
+
+			cudaMalloc((void **)&dev_idata, n * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc dev_idata failed!");
+
+			cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
+
+			try {
+				timer().startGpuTimer();
+			}
+			catch (const std::runtime_error& ex) {
+				exception = true;
+			}
+
+			int *dev_scanSumBlock;
+			cudaMalloc((void **)&dev_scanSumBlock, n * sizeof(int));
+
+			int *dev_addLastElements;
+			cudaMalloc((void **)&dev_addLastElements, numElements * sizeof(int));
+
+			kernscanBlock << <numBlocks, blockSize/2, (blockSize) * sizeof(int) >> > (n, dev_scanSumBlock, dev_addLastElements, dev_idata);
+
+
+			//cudaMemcpy(odata, dev_scanSumBlock, n * sizeof(int), cudaMemcpyDeviceToHost);
+			//printxxx(n, odata);
+
+			;
+
+			//int *dev_lastElementsScan;
+			//cudaMalloc((void **)&dev_lastElementsScan, numElements * sizeof(int));
+			//checkCUDAErrorWithLine("cudaMalloc failed!");
+
+			int threadsPerBlock = 2;
+			int blocksToLaunch = (numBlocks + threadsPerBlock - 1) / threadsPerBlock;
+			//copyLastElements <<<blocksToLaunch, threadsPerBlock >>>(numElements, blockSize, dev_lastElementsScan, dev_scanSumBlock);
+
+
+			//addLastElement << <blocksToLaunch, threadsPerBlock >> > (numElements, blockSize, dev_addLastElements, dev_lastElementsScan, dev_idata);
+
+			//int *addElementsScan = new int[numElements];
+			//cudaMemcpy(addElementsScan, dev_addLastElements, numElements * sizeof(int), cudaMemcpyDeviceToHost);
+			//printxxx(numElements, addElementsScan);
+
+			//int *scanSum = new int[numElements];
+			int *dev_scanSum;
+			cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
+			scanCompact(numElements, dev_scanSum, dev_addLastElements);
+			//printxxx(numElements, scanSum);
+
+			//int *dev_scanSum;
+			//cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
+			//cudaMemcpy(dev_scanSum, scanSum, numElements * sizeof(int), cudaMemcpyHostToDevice);
+
+			//cudaMemcpy(odata, dev_addLastElements, numElements * sizeof(int), cudaMemcpyDeviceToHost);
+			//printxxx(numElements, odata);
+
+			int *dev_odata;
+			cudaMalloc((void **)&dev_odata, n * sizeof(int));
+			addScanMain<<<numBlocks, blockSize >>>(n, dev_odata, dev_scanSum, dev_scanSumBlock);
+
+			if (!exception)
+				timer().endGpuTimer();
+
+			cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
+			//printxxx(n, odata);
+			
+			cudaFree(dev_idata);
+			cudaFree(dev_scanSumBlock);
+		}
 
 		__global__ void upSweep(int n, int d, int *idata) {
 			int index = (blockDim.x*blockIdx.x) + threadIdx.x;
@@ -49,12 +214,6 @@ namespace StreamCompaction {
 			idata[index] += t;
 		}
 
-		void printxxx(int n, const int *a) {
-			for (int i = 0; i < n; i++) {
-				printf("%d ", a[i]);
-			}
-			printf("\n\n\n");
-		}
 
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
@@ -184,8 +343,6 @@ namespace StreamCompaction {
 
 
 			cudaFree(dev_idata);
-
-
 		}
 
 
