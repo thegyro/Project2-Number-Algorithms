@@ -180,6 +180,70 @@ namespace StreamCompaction {
 			cudaFree(dev_odata);
 		}
 
+		void scanSharedGPU(int n, int *dev_odata, const int *idata) {
+			bool exception = false;
+
+			int *dev_idata, *dev_scanSumBlock, *dev_addLastElements, *dev_scanSum;
+
+			int d_max = ilog2ceil(n);
+
+			int twoPowN = 1 << d_max;
+			if (n != twoPowN) {
+
+				int diff = twoPowN - n;
+
+				cudaMalloc((void **)&dev_idata, (n + diff) * sizeof(int));
+				checkCUDAErrorWithLine("cudaMalloc dev_odata1 failed!");
+
+				int threadsPerBlock = 1024;
+				int blocksToLaunch = (n + diff + threadsPerBlock - 1) / threadsPerBlock;
+				resetZeros << <blocksToLaunch, threadsPerBlock >> > (n + diff, dev_idata);
+
+				cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyDeviceToDevice);
+				n = n + diff;
+			}
+			else {
+				cudaMalloc((void **)&dev_idata, n * sizeof(int));
+				checkCUDAErrorWithLine("cudaMalloc dev_idata failed!");
+
+				cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyDeviceToDevice);
+			}
+
+			int blockSize = 1024;
+			int numBlocks = (n + blockSize - 1) / blockSize;
+			int numElements = numBlocks;
+
+			cudaMalloc((void **)&dev_scanSumBlock, n * sizeof(int));
+			cudaMalloc((void **)&dev_addLastElements, numElements * sizeof(int));
+			cudaMalloc((void **)&dev_scanSum, numElements * sizeof(int));
+			checkCUDAErrorWithLine("cudaMalloc failed!");
+
+			//thrust::device_ptr<int> dev_idataItr(dev_addLastElements);
+			//thrust::device_ptr<int> dev_odataItr(dev_scanSum);
+
+			try {
+				timer().startGpuTimer();
+			}
+			catch (const std::runtime_error& ex) {
+				exception = true;
+			}
+
+			kernscanBlock << <numBlocks, blockSize / 2, (blockSize) * sizeof(int) >> > (n, dev_scanSumBlock, dev_addLastElements, dev_idata);
+
+			scanCompact(numElements, dev_scanSum, dev_addLastElements);
+			//thrust::exclusive_scan(dev_idataItr, dev_idataItr + numElements, dev_odataItr);
+
+			addScanMain << <numBlocks, blockSize >> > (n, dev_odata, dev_scanSum, dev_scanSumBlock);
+
+			if (!exception)
+				timer().endGpuTimer();
+
+			cudaFree(dev_idata);
+			cudaFree(dev_scanSum);
+			cudaFree(dev_scanSumBlock);
+			cudaFree(dev_addLastElements);
+		}
+
 		__global__ void upSweep(int n, int d, int *idata) {
 			int index = (blockDim.x*blockIdx.x) + threadIdx.x;
 
@@ -432,36 +496,28 @@ namespace StreamCompaction {
 
 			StreamCompaction::Common::kernMapToBoolean << <numBlocks, numThreads >> > (n, dev_checkZeros, dev_idata);
 
-			int *checkZeros = new int[n];
-			cudaMemcpy(checkZeros, dev_checkZeros, n * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-			int *sumIndices = new int[n];
-			scanShared(n, sumIndices, checkZeros);
-
-			cudaMemcpy(dev_sumIndices, sumIndices, n * sizeof(int), cudaMemcpyHostToDevice);
+			scanSharedGPU(n, dev_sumIndices, dev_checkZeros);
 
 			StreamCompaction::Common::kernScatter << <numBlocks, numThreads >> > (n, dev_odata, dev_idata, dev_checkZeros, dev_sumIndices);
-
 
 			timer().endGpuTimer();
 
 			cudaMemcpy(odata, dev_odata, n * sizeof(int), cudaMemcpyDeviceToHost);
 
-
+			int *sumIndices = new int[n];
+			cudaMemcpy(sumIndices, dev_sumIndices, n * sizeof(int), cudaMemcpyDeviceToHost);
+			int *checkZeros = new int[n];
+			cudaMemcpy(checkZeros, dev_checkZeros, n * sizeof(int), cudaMemcpyDeviceToHost);
 
 			int count = checkZeros[n - 1] == 0 ? sumIndices[n - 1] : sumIndices[n - 1] + 1;
 
-			//delete[] checkZeros;
-			//delete[] sumIndices;
-
-			//printf("hey\n");
+			delete[] checkZeros;
+			delete[] sumIndices;
 
 			cudaFree(dev_idata);
 			cudaFree(dev_odata);
 			cudaFree(dev_checkZeros);
 			cudaFree(dev_sumIndices);
-
 
 			return count;
 		}
