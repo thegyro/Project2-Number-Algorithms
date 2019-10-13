@@ -61,10 +61,10 @@ void fillImage(float *X, int *y) {
 	for (int i = 1; i <= 52; i++) {
 		std::string fileName;
 		if (i <= 9) {
-			fileName = "C:\\\\Users\\sri07\\Desktop\\Project2-Number-Algorithms\\Project2-Character-Recognition\\data-set\\0" + std::to_string(i) + "info.txt";
+			fileName = "../data-set/0" + std::to_string(i) + "info.txt";
 		}
 		else {
-			fileName = "C:\\\\Users\\sri07\\Desktop\\Project2-Number-Algorithms\\Project2-Character-Recognition\\data-set\\" + std::to_string(i) + "info.txt";
+			fileName = "../data-set\\" + std::to_string(i) + "info.txt";
 		}
 
 		std::ifstream myfile(fileName);
